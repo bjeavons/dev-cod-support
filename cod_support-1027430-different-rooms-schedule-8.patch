@@ -1,0 +1,125 @@
+Index: cod_session/cod-session-calendar.tpl.php
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cod_support/cod_session/cod-session-calendar.tpl.php,v
+retrieving revision 1.2
+diff -u -p -r1.2 cod-session-calendar.tpl.php
+--- cod_session/cod-session-calendar.tpl.php	14 Oct 2010 15:25:19 -0000	1.2
++++ cod_session/cod-session-calendar.tpl.php	2 Feb 2011 01:43:52 -0000
+@@ -3,8 +3,10 @@
+   <table class="session-calendar">
+     <tr>
+       <th><?php print t('Time'); ?></th>
+-    <?php foreach ($rooms as $room_key => $room_title): ?>
+-      <th><span class="room-label"><?php print $room_title; ?></th>
++    <?php foreach ($rooms as $room_key => $room): ?>
++      <?php if (!in_array($room_key, $empty_rooms[$day_key])): ?>
++        <th><span class="room-label"><?php print $room['title']; ?></span></th>
++      <?php endif ?>
+     <?php endforeach ?>
+     </tr>
+     <?php foreach ($arranged_slots[$day_key] as $slot): ?>
+@@ -13,14 +15,16 @@
+           <?php print $slot['start']; ?>&nbsp;-<br /><?php print $slot['end']; ?>
+         </td>
+         <?php foreach (array_keys($rooms) as $room_key): ?>
+-          <?php if (!empty($session_grid[$slot['nid']][$room_key]['session'])): ?>
+-          <td class="session occupied<?php print $session_grid[$slot['nid']][$room_key]['class']; ?>" <?php if (!empty($session_grid[$slot['nid']][$room_key]['colspan'])): ?>colspan="<?php print $session_grid[$slot['nid']][$room_key]['colspan']; ?>"<?php endif ?>>
+-            <div class="views-item type-<?php print check_plain($session_grid[$slot['nid']][$room_key]['session']->type); ?>">
+-            <?php print $results[$session_grid[$slot['nid']][$room_key]['session']->nid]; ?>
+-            </div>
+-          </td>
+-          <?php elseif (empty($session_grid[$slot['nid']][$room_key]['spanned'])): ?>
+-          <td class="session empty">&nbsp;</td>
++          <?php if (!in_array($room_key, $empty_rooms[$day_key])): ?>
++            <?php if (!empty($session_grid[$slot['nid']][$room_key]['session'])): ?>
++            <td class="session occupied<?php print $session_grid[$slot['nid']][$room_key]['class']; ?>" <?php if (!empty($session_grid[$slot['nid']][$room_key]['colspan'])): ?>colspan="<?php print $session_grid[$slot['nid']][$room_key]['colspan']; ?>"<?php endif ?>>
++              <div class="views-item type-<?php print check_plain($session_grid[$slot['nid']][$room_key]['session']->type); ?>">
++              <?php print $results[$session_grid[$slot['nid']][$room_key]['session']->nid]; ?>
++              </div>
++            </td>
++            <?php elseif (empty($session_grid[$slot['nid']][$room_key]['spanned'])): ?>
++            <td class="session empty">&nbsp;</td>
++            <?php endif ?>
+           <?php endif ?>
+         <?php endforeach ?>
+       </tr>
+Index: cod_session/cod_session.module
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cod_support/cod_session/cod_session.module,v
+retrieving revision 1.5
+diff -u -p -r1.5 cod_session.module
+--- cod_session/cod_session.module	7 Jan 2011 20:30:33 -0000	1.5
++++ cod_session/cod_session.module	2 Feb 2011 01:43:53 -0000
+@@ -146,12 +146,13 @@ function template_preprocess_cod_session
+   // Get a list of rooms.
+   $result = db_query("SELECT node.nid, node.title FROM {node} node WHERE node.type = 'room' AND node.status = 1 ORDER BY node.title ASC");
+   while ($node = db_fetch_object($result)) {
+-    $rooms[$node->nid] = check_plain($node->title);
++    $rooms[$node->nid] = array('title' => check_plain($node->title));
+   }
+ 
+   // Create structed grid of sessions.
+   $slot_nids = array();
+   $session_grid = array();
++  $used_rooms = array();
+   foreach ($sessions as $session) {
+     if (!empty($session->field_session_slot[0]['nid']) && !empty($session->field_session_room[0]['nid'])) {
+       if (!empty($session->cod_session_classes)) {
+@@ -163,6 +164,8 @@ function template_preprocess_cod_session
+       foreach ($session->field_session_room as $room_instance) {
+         $session_grid[$session->field_session_slot[0]['nid']][$room_instance['nid']]['session'] = $session;
+         $session_grid[$session->field_session_slot[0]['nid']][$room_instance['nid']]['class'] = $class;
++        // Record rooms and used slots.
++        $used_rooms[$room_instance['nid']][] = $session->field_session_slot[0]['nid'];
+       }
+       // Create array of populated slots.
+       if (!$show_all_slots && !in_array($session->field_session_slot[0]['nid'], $slot_nids)) {
+@@ -202,7 +205,10 @@ function template_preprocess_cod_session
+       'nid' => $slot->nid,
+       'start' => date_format_date($date_start, 'custom', 'g:iA'),
+       'end' => date_format_date($date_end, 'custom', 'g:iA'),
+-      );
++    );
++    // Hold onto what slots go with a day_key so the empty rooms for a day can
++    // be easily calculated.
++    $days_slots[$day_key][] = $slot->nid;
+     if (!isset($days[$day_key])) {
+       $days[$day_key] = t('Day !count - !date', array('!count' => $day_count++, '!date' => date_format_date($date_start, 'custom', 'F jS, Y')));
+     }
+@@ -211,6 +217,19 @@ function template_preprocess_cod_session
+   // Sort the arranged slots.
+   cod_session_ksort_recurse($arranged_slots);
+ 
++  // Calculate unused rooms in each day.
++  $empty_rooms = array();
++  foreach ($rooms as $room_nid => $room) {
++    $used_slots = isset($used_rooms[$room_nid]) ? $used_rooms[$room_nid] : array();
++    foreach ($days_slots as $day_key => $day_slots) {
++      $intersect = array_intersect($used_slots, $day_slots);
++      if (empty($intersect)) {
++        // Room not used on this day.
++        $empty_rooms[$day_key][] = $room_nid;
++      }
++    }
++  }
++
+   // Calculate colspans.
+   // For each day...
+   foreach ($days as $day_key => $day_title) {
+@@ -226,7 +245,7 @@ function template_preprocess_cod_session
+             $session = $row[$room_nid]['session'];
+             $colspan = 1;
+             // For remaining rooms in row, check for other sessions.
+-            for ($i=$room_key + 1; $i < count($room_nids); $i++) {
++            for ($i = $room_key + 1; $i < count($room_nids); $i++) {
+               if (!empty($row[$room_nids[$i]]['session'])) {
+                 $adjacent = $row[$room_nids[$i]]['session'];
+                 // Check to see if adjacent column matches.
+@@ -261,6 +280,7 @@ function template_preprocess_cod_session
+   $vars['arranged_slots'] = $arranged_slots;
+   $vars['days'] = $days;
+   $vars['rooms'] = $rooms;
++  $vars['empty_rooms'] = $empty_rooms;
+ }
+ 
+ /**

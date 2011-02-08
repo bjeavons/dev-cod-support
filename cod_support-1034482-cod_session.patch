@@ -1,0 +1,310 @@
+Index: cod_session/cod_session.features.content.inc
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cod_support/cod_session/cod_session.features.content.inc,v
+retrieving revision 1.7
+diff -u -p -r1.7 cod_session.features.content.inc
+--- cod_session/cod_session.features.content.inc	7 Jan 2011 20:09:32 -0000	1.7
++++ cod_session/cod_session.features.content.inc	6 Feb 2011 01:38:27 -0000
+@@ -131,6 +131,68 @@ function cod_session_content_default_fie
+     ),
+   );
+ 
++  // Exported field: field_room_session_capacity
++  $fields['room-field_room_session_capacity'] = array(
++    'field_name' => 'field_room_session_capacity',
++    'type_name' => 'room',
++    'display_settings' => array(
++      'label' => array(
++        'format' => 'above',
++        'exclude' => 0,
++      ),
++      'teaser' => array(
++        'format' => 'default',
++        'exclude' => 0,
++      ),
++      'full' => array(
++        'format' => 'default',
++        'exclude' => 0,
++      ),
++      '4' => array(
++        'format' => 'default',
++        'exclude' => 0,
++      ),
++      '2' => array(
++        'format' => 'default',
++        'exclude' => 0,
++      ),
++      '3' => array(
++        'format' => 'default',
++        'exclude' => 0,
++      ),
++      'token' => array(
++        'format' => 'default',
++        'exclude' => 0,
++      ),
++    ),
++    'widget_active' => '1',
++    'type' => 'number_integer',
++    'required' => '0',
++    'multiple' => '0',
++    'module' => 'number',
++    'active' => '1',
++    'prefix' => '',
++    'suffix' => '',
++    'min' => '',
++    'max' => '',
++    'allowed_values' => '',
++    'allowed_values_php' => '',
++    'widget' => array(
++      'default_value' => array(
++        '0' => array(
++          'value' => '',
++          '_error_element' => 'default_value_widget][field_room_session_capacity][0][value',
++        ),
++      ),
++      'default_value_php' => NULL,
++      'label' => 'Session capacity',
++      'weight' => '-3',
++      'description' => 'Number of sessions or BoFs that this room can hold in a time slot. Used to allow multiple BoFs in the same room at the same time slot.',
++      'type' => 'number',
++      'module' => 'number',
++    ),
++  );
++
+   // Exported field: field_accepted
+   $fields['schedule_item-field_accepted'] = array(
+     'field_name' => 'field_accepted',
+@@ -229,7 +291,9 @@ function cod_session_content_default_fie
+     'referenceable_types' => array(
+       'room' => 'room',
+       'event' => 0,
++      'bof_session' => 0,
+       'news' => 0,
++      'page' => 0,
+       'product' => 0,
+       'schedule_item' => 0,
+       'session' => 0,
+@@ -299,7 +363,9 @@ function cod_session_content_default_fie
+     'referenceable_types' => array(
+       'time_slot' => 'time_slot',
+       'event' => 0,
++      'bof_session' => 0,
+       'news' => 0,
++      'page' => 0,
+       'product' => 0,
+       'room' => 0,
+       'schedule_item' => 0,
+@@ -547,7 +613,9 @@ advanced|Advanced',
+     'referenceable_types' => array(
+       'room' => 'room',
+       'event' => 0,
++      'bof_session' => 0,
+       'news' => 0,
++      'page' => 0,
+       'product' => 0,
+       'schedule_item' => 0,
+       'session' => 0,
+@@ -675,7 +743,9 @@ advanced|Advanced',
+     'referenceable_types' => array(
+       'time_slot' => 'time_slot',
+       'event' => 0,
++      'bof_session' => 0,
+       'news' => 0,
++      'page' => 0,
+       'product' => 0,
+       'room' => 0,
+       'schedule_item' => 0,
+@@ -893,6 +963,7 @@ Track 3',
+   t('Photo');
+   t('Presenter(s)');
+   t('Room');
++  t('Session capacity');
+   t('Slides');
+   t('Status');
+   t('Time slot');
+Index: cod_session/cod_session.features.uuid_node.inc
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cod_support/cod_session/cod_session.features.uuid_node.inc,v
+retrieving revision 1.4
+diff -u -p -r1.4 cod_session.features.uuid_node.inc
+--- cod_session/cod_session.features.uuid_node.inc	25 Jan 2011 20:32:22 -0000	1.4
++++ cod_session/cod_session.features.uuid_node.inc	6 Feb 2011 01:38:27 -0000
+@@ -11,8 +11,8 @@ function cod_session_uuid_features_defau
+     'language' => '',
+     'uid' => '0',
+     'status' => '1',
+-    'created' => '1295453407',
+-    'changed' => '1295905543',
++    'created' => '1295905543',
++    'changed' => '1296683471',
+     'comment' => '0',
+     'promote' => '0',
+     'moderate' => '0',
+@@ -22,47 +22,47 @@ function cod_session_uuid_features_defau
+     'revision_uid' => '1',
+     'title' => 'Program',
+     'body' => '[Tip: You can use this page to describe the overall schedule for your event. For example, "Day 1-2: Sessions. Day 3: Training workshops. Link to content as needed.]
+-        
+-        Day One - Oct 19, 2011
+-        Breakfast and registration
+-        Pre-conference training
+-        Speakers reception
+-        
+-        Day Two - Oct 20, 2011
+-        Breakfast and registration
+-        Sessions
+-        Opening night party
+-        
+-        Day Three - Oct 21, 2011
+-        Breakfast and registration
+-        Sessions
+-        Exhibits and posters
+-        
+-        Day Four - Oct 22, 2011
+-        Breakfast and registration
+-        Sessions
+-        Wrap party',
++          
++          Day One - Oct 19, 2011
++          Breakfast and registration
++          Pre-conference training
++          Speakers reception
++          
++          Day Two - Oct 20, 2011
++          Breakfast and registration
++          Sessions
++          Opening night party
++          
++          Day Three - Oct 21, 2011
++          Breakfast and registration
++          Sessions
++          Exhibits and posters
++          
++          Day Four - Oct 22, 2011
++          Breakfast and registration
++          Sessions
++          Wrap party',
+     'teaser' => '[Tip: You can use this page to describe the overall schedule for your event. For example, "Day 1-2: Sessions. Day 3: Training workshops. Link to content as needed.]
+-        
+-        Day One - Oct 19, 2011
+-        Breakfast and registration
+-        Pre-conference training
+-        Speakers reception
+-        
+-        Day Two - Oct 20, 2011
+-        Breakfast and registration
+-        Sessions
+-        Opening night party
+-        
+-        Day Three - Oct 21, 2011
+-        Breakfast and registration
+-        Sessions
+-        Exhibits and posters
+-        
+-        Day Four - Oct 22, 2011
+-        Breakfast and registration
+-        Sessions
+-        Wrap party',
++          
++          Day One - Oct 19, 2011
++          Breakfast and registration
++          Pre-conference training
++          Speakers reception
++          
++          Day Two - Oct 20, 2011
++          Breakfast and registration
++          Sessions
++          Opening night party
++          
++          Day Three - Oct 21, 2011
++          Breakfast and registration
++          Sessions
++          Exhibits and posters
++          
++          Day Four - Oct 22, 2011
++          Breakfast and registration
++          Sessions
++          Wrap party',
+     'log' => '',
+     'revision_timestamp' => '1295453407',
+     'format' => '1',
+@@ -77,8 +77,9 @@ function cod_session_uuid_features_defau
+     'taxonomy' => array(),
+     'uuid' => '82568654-06d2-11e0-a3ab-29212d7dea21',
+     'revision_uuid' => '8b783c86-0e1c-11e0-98a9-d1fb755a60d4',
++    'loaded_revision_uuid' => '8b783c86-0e1c-11e0-98a9-d1fb755a60d4',
+     'pathauto_perform_alias' => FALSE,
+-    'date' => '2011-01-19 11:10:07 -0500',
++    'date' => '2011-01-24 16:45:43 -0500',
+   );
+   return $nodes;
+ }
+Index: cod_session/cod_session.info
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cod_support/cod_session/cod_session.info,v
+retrieving revision 1.21
+diff -u -p -r1.21 cod_session.info
+--- cod_session/cod_session.info	2 Feb 2011 01:08:15 -0000	1.21
++++ cod_session/cod_session.info	6 Feb 2011 01:38:27 -0000
+@@ -28,6 +28,7 @@ dependencies[] = "views_ui"
+ description = "COD Session Scheduling & Voting"
+ features[content][] = "room-field_room_capacity"
+ features[content][] = "room-field_room_photo"
++features[content][] = "room-field_room_session_capacity"
+ features[content][] = "schedule_item-field_accepted"
+ features[content][] = "schedule_item-field_session_room"
+ features[content][] = "schedule_item-field_session_slot"
+Index: cod_session/cod_session.module
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cod_support/cod_session/cod_session.module,v
+retrieving revision 1.5
+diff -u -p -r1.5 cod_session.module
+--- cod_session/cod_session.module	7 Jan 2011 20:30:33 -0000	1.5
++++ cod_session/cod_session.module	6 Feb 2011 01:38:27 -0000
+@@ -3,6 +3,21 @@
+ include_once('cod_session.features.inc');
+ 
+ /**
++ * Implementation of hook_field_access().
++ */
++function cod_session_field_access($op, $field, $account, $node = NULL) {
++  switch ($op) {
++    case 'view':
++    case 'edit':
++      // Add new user access check for certain roles, @todo
++      if ($node->type == 'session' && ($field['field_name'] == 'field_session_room' || $field['field_name'] == 'field_session_slot')) {
++        return FALSE;
++      }
++  }
++  return TRUE;
++}
++
++/**
+  * Implementation of hook_theme().
+  */
+ function cod_session_theme() {
+@@ -18,7 +33,7 @@ function cod_session_theme() {
+  * Implementation of hook_nodeapi().
+  */
+ function cod_session_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+-  if ($op == 'validate') {
++  if ($op == 'validate' && $node->type == 'session') {
+     // If the node has a room and slot field, make sure there are no existing nodes that have the same room/slot combination.
+     if (!empty($node->field_session_slot[0]['nid']) && !empty($node->field_session_room[0]['nid'])) {
+       $slots = array();
+Index: cod_session/cod_session.strongarm.inc
+===================================================================
+RCS file: /cvs/drupal-contrib/contributions/modules/cod_support/cod_session/cod_session.strongarm.inc,v
+retrieving revision 1.9
+diff -u -p -r1.9 cod_session.strongarm.inc
+--- cod_session/cod_session.strongarm.inc	27 Jan 2011 18:33:43 -0000	1.9
++++ cod_session/cod_session.strongarm.inc	6 Feb 2011 01:38:27 -0000
+@@ -341,7 +341,7 @@ function cod_session_strongarm() {
+   $strongarm->name = 'content_extra_weights_room';
+   $strongarm->value = array(
+     'title' => '-5',
+-    'body_field' => '-3',
++    'body_field' => '-2',
+     'revision_information' => '1',
+     'author' => '0',
+     'options' => '2',
