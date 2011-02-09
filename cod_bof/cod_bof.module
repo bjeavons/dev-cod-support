@@ -6,11 +6,11 @@ include_once('cod_bof.features.inc');
  * Implementation of hook_menu().
  */
 function cod_bof_menu() {
-  $items['bof-scheduler'] = array(
-    'title' => 'Schedule a BoF',
+  $items['cod-scheduler/%'] = array(
+    'title' => 'Schedule a session',
     'page callback' => 'drupal_get_form',
-    'page arguments' => array('cod_bof_schedule'),
-    'access arguments' => array('create bof_session content'),
+    'page arguments' => array('cod_bof_schedule', 1),
+    'access arguments' => array('create bof_session content'), // @todo this is wrong
     'type' => MENU_CALLBACK,
   );
 
@@ -30,9 +30,33 @@ function cod_bof_theme() {
 }
 
 /**
+ * Implementation of hook_form_FORM_ID_alter().
+ */
+function cod_session_form_node_type_form_alter(&$form, $form_state) {
+  if (isset($form['#node_type'])) {
+    // Provide scheduling exclusvity control for this content type.
+    $form['cod_session'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('COD Exclusivity'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+    );
+    $form['cod_session']['cod_exclusive'] = array(
+      '#title' => t('Content type is exclusive when scheduled'),
+      '#type' => 'checkbox',
+      '#default_value' => variable_get('cod_exclusive_' . $form['#node_type']->type, TRUE),
+      '#description' => t('No other content can be scheduled in same room and time slot. Scheduling is enabled for this type by adding the room and time slot fields.'),
+      // @todo, also make reference to room spanning?
+    );
+  }
+}
+
+/**
  * Implementation of hook_form_alter().
  */
 function cod_bof_form_alter(&$form, &$form_state, $form_id) {
+  // @todo consider altering user_admin_perm form to disable editing
+  // of edit slot and room permissions?
   if ($form_id == 'bof_session_node_form') {
     if (isset($_REQUEST['edit'])) {
       // @todo this is only necessary if room and slot are custom rendered.
@@ -71,7 +95,7 @@ function cod_bof_form_alter(&$form, &$form_state, $form_id) {
     // Redirect after form submission of the schedule.
     $form['#redirect'] = 'program/bof-schedule'; // @todo get this from View?
     // Disable editing of the room and slot fields wuth after_build, FAPI!!!
-    $form['#after_build'][] = '_cod_bof_form_after_build';
+    //$form['#after_build'][] = '_cod_bof_form_after_build';
     if ($form['#node']->nid) {
       // Provide unschedule checkbox.
       $form['cod_bof_unschedule'] = array(
@@ -126,15 +150,15 @@ function cod_session_time_slot_format($slot) {
 
 /**
  * Get BoFs created by a user.
- *
+ * @todo rename this off bofs
  * @param boolean $all Whether to return all BoFs or just those unscheduled.
  * @return array Array of BoF nodes or empty.
  */
-function cod_bof_users_bofs($account, $all = TRUE) {
+function cod_bof_users_bofs($account, $type, $all = TRUE) {
   $nids = $bofs = array();
 
   if ($all) {
-    $sql = "SELECT n.nid FROM {node} n WHERE n.type = 'bof_session' AND n.uid = %d AND n.status = 1";
+    $sql = "SELECT n.nid FROM {node} n WHERE n.type = '%s' AND n.uid = %d AND n.status = 1";
   }
   else {
     $sql = "SELECT n.nid FROM {node} n
@@ -142,10 +166,10 @@ function cod_bof_users_bofs($account, $all = TRUE) {
     ON r.nid = n.nid AND r.vid = n.vid
     INNER JOIN {content_field_session_slot} s
     ON s.nid = n.nid AND s.vid = n.vid
-    WHERE n.type = 'bof_session' AND n.uid = %d AND n.status = 1
+    WHERE n.type = '%s' AND n.uid = %d AND n.status = 1
     AND r.field_session_room_nid IS NULL AND s.field_session_slot_nid IS NULL";
   }
-  $result = db_query(db_rewrite_sql($sql), $account->uid);
+  $result = db_query(db_rewrite_sql($sql), $type, $account->uid);
   while ($record = db_fetch_array($result)) {
     $nids[] = $record['nid'];
   }
@@ -204,7 +228,8 @@ function cod_bof_users_bofs($account, $all = TRUE) {
  * Custom schedule a BoF form.
  */
 //function cod_bof_schedule_form(&$form_state, $room, $slot, $url_query) {
-function cod_bof_schedule() {
+function cod_bof_schedule(&$form_state, $type) {
+  // @todo, check cod_session_schedule_access().
   global $user;
   $url_query = array();
   // COD BoF uses Prepopulate so retrieve room and time slot from the request.
@@ -232,7 +257,7 @@ function cod_bof_schedule() {
   }
 
   // Show unscheduled BoFs for this user.
-  $bofs = cod_bof_users_bofs($user, FALSE);
+  $bofs = cod_bof_users_bofs($user, $type, FALSE);
   if (empty($bofs)) {
     // Redirect to node add if the user has no BoFs.
     drupal_goto('node/add/bof-session', $url_query);
@@ -290,48 +315,56 @@ function cod_bof_schedule_submit($form, $form_state) {
  * Implementation of hook_nodeapi().
  */
 function cod_bof_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
-  if ($op == 'validate' && $node->type == 'bof_session') {
+  if ($op == 'validate') {
     // If the node has a room and slot field, make sure there are no existing nodes that have the same room/slot combination.
+    // Unless the node is not exclusive, then check room capacity.
     if (!empty($node->field_session_slot[0]['nid']) && !empty($node->field_session_room[0]['nid'])) {
-      $slots = array();
-      $rooms = array();
+      $slots = $rooms = array();
       foreach ($node->field_session_slot as $slot) {
         if (!empty($slot['nid'])) {
           $slots[] = $slot['nid'];
         }
       }
-      // BoFs can be scheduled in only one room.
-      $room = node_load($node->field_session_room[0]['nid']);
-      // Get room session capacity.
-      if (isset($room->field_room_session_capacity) && $room->field_room_session_capacity[0]['value']) {
-        $capacity = $room->field_room_session_capacity[0]['value'];
+      // Get rooms.
+      foreach ($node->field_session_room as $room) {
+        if (!empty($room['nid'])) {
+          $rooms[$room['nid']] = node_load($room['nid']);
+        }
       }
-      else {
-        $capacity = 0;
+      // Get room capacity if this node is scheduled in only one room.
+      // If multiple rooms are selected it should mean this node is exclusive.
+      $capacity = 0;
+      if (count($rooms) == 1) {
+        $room = current($rooms);
+        if (isset($room->field_room_session_capacity) && $room->field_room_session_capacity[0]['value']) {
+          $capacity = $room->field_room_session_capacity[0]['value'];
+        }
       }
 
-      if (!empty($slots) && !empty($room)) {
+      if (!empty($slots) && !empty($rooms)) {
+        $room_nids = array_keys($rooms);
         $result = db_rewrite_sql(db_query("SELECT DISTINCT
         node.nid AS nid,
         node.title AS title,
-        content_field_session_room.field_session_room_nid AS room_nid,
+        node.type AS type,
+        r.field_session_room_nid AS room_nid,
         node2.title AS room_title
         FROM {node} node
-        INNER JOIN {content_field_session_room} content_field_session_room
-        ON content_field_session_room.nid = node.nid AND content_field_session_room.vid = node.vid 
-        AND content_field_session_room.field_session_room_nid = %d
+        INNER JOIN {content_field_session_room} r
+        ON r.nid = node.nid AND r.vid = node.vid 
+        AND r.field_session_room_nid IN (" . db_placeholders($room_nids, 'int') . ")
         INNER JOIN {node} node2
-        ON content_field_session_room.field_session_room_nid = node2.nid 
-        INNER JOIN {content_field_session_slot} content_field_session_slot
-        ON content_field_session_slot.nid = node.nid AND content_field_session_slot.vid = node.vid 
-        AND content_field_session_slot.field_session_slot_nid IN (" . db_placeholders($slots, 'int') . ")
+        ON r.field_session_room_nid = node2.nid 
+        INNER JOIN {content_field_session_slot} s
+        ON s.nid = node.nid AND s.vid = node.vid 
+        AND s.field_session_slot_nid IN (" . db_placeholders($slots, 'int') . ")
         WHERE node.nid != %d
-        ", array_merge(array($room->nid), $slots, array($node->nid))));
+        ", array_merge($room_nids, $slots, array($node->nid))));
 
         $errors = array();
         while ($record = db_fetch_object($result)) {
           $capacity--;
-          if ($capacity <= 0) {
+          if ($capacity <= 0 || variable_get('cod_exclusive_' . $record->type, TRUE)) {
             $errors[] = t('!session in !room', array('!session' => l($record->title, 'node/' . $record->nid), '!room' => l($record->room_title, 'node/' . $record->room_nid)));
           }
         }
@@ -349,42 +382,42 @@ function cod_bof_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
  */
 function template_preprocess_cod_bof_calendar(&$vars) {
   global $user;
-  // $vars['view']->result contains the raw data
+  // $view->result contains the raw data
   // $vars['rows'] contains the row-formatted fields
 
-dpm($vars['view']);
-  // Save raw row results keyed on nid.
-  $results = array();
-  $sessions = array();
-  $node_types = array();
-  if (!empty($vars['view']->result)) {
-    foreach ($vars['view']->result as $key => $view_result) {
+  $view = $vars['view'];
+  // Save raw row View results keyed on nid.
+  $view_results = $scheduled_items = $node_types = array();
+  if (!empty($view->result)) {
+    foreach ($view->result as $key => $view_result) {
       $node = node_load($view_result->nid);
-      $sessions[$node->nid] = $node;
-      $results[$node->nid] = $vars['rows'][$key];
+      $scheduled_items[$node->nid] = $node;
+      // $view_results will be what is actually output in the tpl file.
+      $view_results[$node->nid] = $vars['rows'][$key];
       // Hold onto node types seen in this View.
       if (!in_array($node->type, $node_types)) {
         $node_types[] = $node->type;
       }
     }
   }
-
+dpm($view);
   // Get days of the schedule @todo consider making this a Style setting.
-  $session_days = cod_session_days();
-  // @todo, set default day?
+  $schedule_days = $view->cod_schedule_days;
+
   //$this_day = array_shift(array_keys($session_days));
-  if (!empty($vars['view']->args[0])) {
-    $this_day = $vars['view']->args[0];
+  if (!empty($view->args[0])) {
+    $this_day = $view->args[0];
   }
 
   // Attach links to the top of the display.
   // @todo only if there are multiple events
   $day_links = array();
-  foreach ($session_days as $day_key => $day) {
+  // @todo but display path could be tab local item '/all'
+  //$current_path = $view->display[$view->current_display]->display_options['path'];
+  /*foreach ($session_days as $day_key => $day) {
     // @todo pass along links with attribute information?
-    // @todo get View path.
     $day_links[] = l($day, 'program/bof-schedule/' . $day_key);
-  }
+  }*/
 
   // Currently, the Track is given by a text optionwidget.
   // Consider revising this to be taxonomy or node reference to simplify the following.
@@ -410,7 +443,7 @@ dpm($vars['view']);
   // Create text CCK optionwidgets as attributes of sessions for CSS usage.
   // @todo review for sanitization
   if (!empty($session_attrs)) {
-    foreach ($sessions as $session_nid => $session) {
+    foreach ($scheduled_items as $session_nid => $session) {
       foreach ($session_attrs as $field) {
         // See if field exists for particular session node.
         if (is_array($session->$field['name'])) {
@@ -419,8 +452,8 @@ dpm($vars['view']);
             // Emtpy values are NULL.
             if (isset($instance['value'])) {
               // Create container if doesn't exist.
-              if (!isset($sessions[$session_nid]->cod_session_classes)) {
-                $sessions[$session_nid]->cod_session_classes = array();
+              if (!isset($scheduled_items[$session_nid]->cod_session_classes)) {
+                $scheduled_items[$session_nid]->cod_session_classes = array();
               }
               $key = array_search($instance['value'], $field['values']);
               if ($key === FALSE) {
@@ -435,7 +468,7 @@ dpm($vars['view']);
               }
               if ($key !== FALSE) {
                 // Create class based on field key.
-                $sessions[$session_nid]->cod_session_classes[$field['machine_keys'][$key]] = $value;
+                $scheduled_items[$session_nid]->cod_session_classes[$field['machine_keys'][$key]] = $value;
               }
             }
           }
@@ -445,6 +478,7 @@ dpm($vars['view']);
   }
 
   // Get a list of rooms. @todo For sessions, use only those rooms. For BoFs, load rooms allowed for BoF usage.
+//  $rooms = _cod_session_schedule_rooms($view->cod_schedule_interactive);
   $result = db_query("SELECT node.nid FROM {node} node WHERE node.type = 'room' AND node.status = 1 ORDER BY node.title ASC");
   while ($record = db_fetch_array($result)) {
     $node = node_load($record['nid']);
@@ -462,9 +496,12 @@ dpm($vars['view']);
   }
   // Get a list of time slots. The list itself is powered by a View so it's
   // configurable to allow exclusion.
-  // @todo is this list respected when showing sessions?
+  // The list of sessions is not filtered by this list. A View filter argument should be used for that.
   // @todo this won't allow different Views on the same day to show different time slots (maybe if one was sessions and the other bofs)?
-  $time_slots  = _cod_bof_time_slots($this_day);
+  $time_slots = array();
+  foreach ($schedule_days as $day) {
+    $time_slots  = array_merge($time_slots, cod_day_time_slots($day));
+  }
 
   if (empty($rooms) || empty($time_slots)) {
     // No rooms or time slots exist so do not continue.
@@ -479,38 +516,38 @@ dpm($vars['view']);
     $slots[$node->nid] = $node;
   }
 
-  // Create structed grid of scheduled sessions.
-  $used_slots = $session_grid = $used_rooms = $authored = array();
-  foreach ($sessions as $session) {
-    if (!empty($session->field_session_slot[0]['nid']) && !empty($session->field_session_room[0]['nid'])) {
-      if (!empty($session->cod_session_classes)) {
-        $class = ' ' . implode(' ', array_keys($session->cod_session_classes));
+  // Create structured grid of scheduled items in format [slot][room][item_nid]
+  $used_slots = $item_grid = $used_rooms = $authored = array();
+  foreach ($scheduled_items as $item) {
+    if (!empty($item->field_session_slot[0]['nid']) && !empty($item->field_session_room[0]['nid'])) {
+      if (!empty($item->cod_session_classes)) {
+        $class = ' ' . implode(' ', array_keys($item->cod_session_classes));
       }
       else {
         $class = '';
       }
       // Handle sessions in multiple rooms.
-      foreach ($session->field_session_room as $room_instance) {
-        $session_grid[$session->field_session_slot[0]['nid']][$room_instance['nid']][$session->nid]['session'] = $session;
-        $session_grid[$session->field_session_slot[0]['nid']][$room_instance['nid']][$session->nid]['class'] = $class;
+      foreach ($item->field_session_room as $room_instance) {
+        $item_grid[$item->field_session_slot[0]['nid']][$room_instance['nid']][$item->nid]['session'] = $item;
+        $item_grid[$item->field_session_slot[0]['nid']][$room_instance['nid']][$item->nid]['class'] = $class;
         // Record rooms and used slots.
-        $used_rooms[$room_instance['nid']][] = $session->field_session_slot[0]['nid'];
+        $used_rooms[$room_instance['nid']][] = $item->field_session_slot[0]['nid'];
       }
       // Create array of populated slots.
-      if (!in_array($session->field_session_slot[0]['nid'], $used_slots)) {
-        $used_slots[] = $session->field_session_slot[0]['nid'];
+      if (!in_array($item->field_session_slot[0]['nid'], $used_slots)) {
+        $used_slots[] = $item->field_session_slot[0]['nid'];
       }
     }
     // Record sessions for this user, their call-to-action can use it.
-    if ($session->uid == $user->uid) {
-      $authored[] = $session->nid;
+    if ($item->uid == $user->uid) {
+      $authored[] = $item->nid;
     }
   }
-dpm($session_grid);
+
   // Explicitly discover if there are unschedled sessions by this user if
-  // the BoF workflow is enabled.
-  if ($vars['view']->bof) {
-    $authored = cod_bof_users_bofs($user, FALSE);
+  // the interactive workflow is enabled.
+  if ($view->cod_schedule_interactive) {
+    $authored = cod_bof_users_bofs($user, $view->cod_interactive_type, FALSE);
     if (!empty($authored)) {
       $unscheduled_bofs = TRUE;
     }
@@ -539,6 +576,31 @@ dpm($session_grid);
   // Sort the arranged slots.
   cod_session_ksort_recurse($arranged_slots);
 
+  // Limit room list by the ones in use, unless this schedule is interactive.
+  
+  // Calculate unused rooms in each day.
+  $empty_rooms = $show_rooms = array();
+  foreach ($rooms as $room_nid => $room) {
+    foreach ($days_slots as $day_key => $day_slots) {
+      $intersect = array_intersect($used_rooms[$room_nid], $day_slots);
+      if (empty($intersect)) {
+        // Room not used on this day.
+        $empty_rooms[$day_key][$room_nid] = TRUE;
+        if ($view->cod_schedule_interactive) {
+          $show_rooms[$day_key][$room_nid] = TRUE;
+        }
+        else {
+          $show_rooms[$day_key][$room_nid] = FALSE;
+        }
+      }
+      else {
+        // Room is in use, so show it.
+        $show_rooms[$day_key][$room_nid] = TRUE;
+      }
+    }
+  }
+  
+
   // @todo get rooms for each day?
   $room_nids = array_keys($rooms);
   // Build schedule array.
@@ -551,6 +613,9 @@ dpm($session_grid);
       $schedule_grid[$day_key][$slot['nid']] = array();
       // For each room. $room_key is used for determing colspans.
       foreach ($room_nids as $room_key => $room_nid) {
+        if (!$view->cod_schedule_interactive && $empty_rooms[$day_key][$room_nid]) {
+          continue;
+        }
         // Collect sessions and availability and CTA information.
         // The tpl file determines what to print. @todo make that determination here?
 
@@ -559,30 +624,40 @@ dpm($session_grid);
         // Now at the level of depth of session_grid, that is [slot][room].
         $schedule_grid[$day_key][$slot['nid']][$room_nid]['sessions'] = array();
 
-        // Check $session_grid for if session exists in this slot.
-        if (!empty($session_grid[$slot['nid']][$room_nid])) {
+        // Check $item_grid for if session exists in this slot.
+        if (!empty($item_grid[$slot['nid']][$room_nid])) {
           // Record the session(s) in this room and slot.
-          // $session_grid[slot][room] is an array of sessions. Store sessions
+          // $item_grid[slot][room] is an array of sessions. Store sessions
           // in $schedule_grid at [day][slot][room]['sessions'].
-          $schedule_grid[$day_key][$slot['nid']][$room_nid]['sessions'] = $session_grid[$slot['nid']][$room_nid];
-          // Count sessions.
-          $available = $available - count($session_grid[$slot['nid']][$room_nid]);
+          $schedule_grid[$day_key][$slot['nid']][$room_nid]['sessions'] = $item_grid[$slot['nid']][$room_nid];
+          // Count scheduled items.
+          $available = $available - count($item_grid[$slot['nid']][$room_nid]);
+          if (count($item_grid[$slot['nid']][$room_nid]) == 1) {
+            $this_session = current($item_grid[$slot['nid']][$room_nid]);
+            // Session and schedule item content overrides capacity.
+            if ($this_session['session']->type != 'bof_session') {
+              // @todo Perhaps keep Full message from showing?
+              $available = 0;
+            }
+          }
+          
+
           $colspan = 1;
           // If this slot has only one session, calculate colspans in time slot (row).
           // @todo consider if session is in this and not next sequential room?
-          if (count($session_grid[$slot['nid']][$room_nid]) == 1) {
-            $this_session = array_pop($session_grid[$slot['nid']][$room_nid]);
+          if (count($item_grid[$slot['nid']][$room_nid]) == 1) {
+            $this_session = array_pop($item_grid[$slot['nid']][$room_nid]);
             // Check for sessions in remaining rooms.
             for ($i = $room_key + 1; $i < count($room_nids); $i++) {
-              if (!empty($session_grid[$slot['nid']][$room_nids[$i]]) && count($session_grid[$slot['nid']][$room_nids[$i]]) == 1) {
-                $adjacent = array_pop($session_grid[$slot['nid']][$room_nids[$i]]);
+              if (!empty($item_grid[$slot['nid']][$room_nids[$i]]) && count($item_grid[$slot['nid']][$room_nids[$i]]) == 1) {
+                $adjacent = array_pop($item_grid[$slot['nid']][$room_nids[$i]]);
                 // Check to see if adjacent column matches.
                 if ($this_session->nid == $adjacent->nid) {
                   // We'll accommodate for this in the markup.
                   $colspan++;
                   $schedule_grid[$day_key][$slot['nid']][$room_nids[$i]]['spanned'] = TRUE;
                   // Don't process adjacent room when setting schedule grid.
-                  unset($session_grid[$slot['nid']][$room_nids[$i]]);
+                  unset($item_grid[$slot['nid']][$room_nids[$i]]);
                 }
                 else {
                   // Adjacent session does not match.
@@ -598,49 +673,56 @@ dpm($session_grid);
           // Set colspan.
           $schedule_grid[$day_key][$slot['nid']][$room_nid]['colspan'] = $colspan;
         }
-        if ($available <= 0) {
-          $availability = t('Room is full');
-        }
-        else {
-          $availability = format_plural($available, '@count slot available', '@count slots available');
-          // There is availability so provide a call-to-action for scheduling.
-          $options = array(
-            'query' => array(
-              // The session room field is unlimited so it would be rendered as
-              // checkboxes but because it's being altered by cod_bof set the
-              // Prepopulate arguments to what it will be, a select list.
-              'edit[field_session_room][nid][nid]' => $room_nid,
-              'edit[field_session_slot][nid][nid]' => $slot['nid'],
-              // Cannot pass destination here because the drupal_goto() in
-              // cod_bof_schedule() will follow it.
-            ),
-          );
-          // If the user has unscheduled BoFs or has not submitted any
-          // they are given a link to add and otherwise to schedule.
-          if (!$authored || !$unscheduled_bofs) {
-            $cta = l(t('Add a BoF'), 'node/add/bof-session', $options);
+
+        // Include room availability and call-to-action if this is an interactive 
+        // schedule and user is allowed to create and schedule.
+        if ($view->cod_schedule_interactive && cod_session_schedule_access($view->cod_interactive_type, $user)) {
+          $type_url_str = str_replace('_', '-', $view->cod_interactive_type); // Oh, Drupal.
+          if ($available <= 0) {
+            $availability = t('Room is full');
           }
           else {
-            $cta = l(t('Schedule a BoF'), 'bof-scheduler', $options);
+            $availability = format_plural($available, '@count slot available', '@count slots available');
+            // There is availability so provide a call-to-action for scheduling.
+            $options = array(
+              'query' => array(
+                // The session room field is unlimited so it would be rendered as
+                // checkboxes but because it's being altered by cod_bof set the
+                // Prepopulate arguments to what it will be, a select list.
+                'edit[field_session_room][nid][nid]' => $room_nid,
+                'edit[field_session_slot][nid][nid]' => $slot['nid'],
+                // Cannot pass destination here because the drupal_goto() in
+                // cod_bof_schedule() will follow it.
+              ),
+            );
+            // If the user has unscheduled BoFs or has not submitted any
+            // they are given a link to add and otherwise to schedule.
+            // @todo, get the content type name.
+            if (!$authored || !$unscheduled_bofs) {
+              $cta = l(t('Add a session'), 'node/add/' . $type_url_str, $options);
+            }
+            else {
+              $cta = l(t('Schedule a session'), 'cod-scheduler/' . $view->cod_interactive_type, $options);
+            }
+            $schedule_grid[$day_key][$slot['nid']][$room_nid]['cta'] = $cta;
           }
-          $schedule_grid[$day_key][$slot['nid']][$room_nid]['cta'] = $cta;
+          // Include availability.
+          $schedule_grid[$day_key][$slot['nid']][$room_nid]['availability'] = $availability;
         }
-        // Include availability.
-        $schedule_grid[$day_key][$slot['nid']][$room_nid]['availability'] = $availability;
       }
     }
   }
 
-  $vars['results'] = $results;
-  $vars['session_grid'] = $session_grid;
+  $vars['view_results'] = $view_results;
+  $vars['session_grid'] = $item_grid;
   $vars['arranged_slots'] = $arranged_slots;
   $vars['schedule_grid'] = $schedule_grid;
   $vars['days'] = $days;
-  $vars['day_links'] = $day_links;
+  //$vars['day_links'] = $day_links;
   $vars['rooms'] = $rooms;
   $vars['room_nids'] = $room_nids;
-  $vars['empty_rooms'] = $empty_rooms;
-  $vars['bof'] = $vars['view']->bof;
+  $vars['show_rooms'] = $show_rooms;
+  $vars['bof'] = $view->bof;
 }
 
 function cod_session_days() {
@@ -660,9 +742,44 @@ function cod_session_days() {
 }
 
 /**
+ * Helper function returns a list of rooms to display on the schedule.
+ */
+function _cod_session_schedule_rooms() {
+  $rooms = array();
+  // Try and load the schedule room list view.
+  $view = views_get_view('schedule_room_list');
+  if (!$view) {
+    // It didn't load so default to the list of published rooms.
+    $result = db_query("SELECT node.nid, node.title FROM {node} node WHERE node.type = 'room' AND node.status = 1 ORDER BY node.title ASC");
+    while ($record = db_fetch_object($result)) {
+      $room = node_load($result->nid);
+      $sponsor = '';
+      if (isset($room->field_room_sponsor) && !empty($room->field_room_sponsor[0]['value'])) {
+        $sponsor = check_plain($room->field_room_sponsor[0]['value']);
+      }
+      $rooms[$record->nid] = array(
+        'title' => check_plain($record->title),
+        'sponsor' => $sponsor,
+      );
+    }
+  }
+  else {
+    // Return the results from the view.
+    $view->execute();
+    foreach ($view->result as $record) {
+      $rooms[$record->nid] = array(
+        'title' => check_plain($record->node_title),
+        'sponsor' => check_plain($record->node_data_field_room_sponsor_field_room_sponsor_value),
+      );
+    }
+  }
+  return $rooms;
+}
+
+/**
  * Get time slots for a day.
  */
-function _cod_bof_time_slots($day = NULL) {
+function cod_day_time_slots($day = NULL) {
   $time_slots = array();
   $view = views_get_view('cod_time_slots');
 

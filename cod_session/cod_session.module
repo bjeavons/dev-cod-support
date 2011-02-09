@@ -3,14 +3,39 @@
 include_once('cod_session.features.inc');
 
 /**
+ * Implementation of hook_perm().
+ */
+function cod_session_perm() {
+  $perms = array();
+  $types = cod_session_schedulable_types();
+  if (!empty($types)) {
+    foreach ($types as $type => $content_type) {
+      $perms[] = 'schedule ' . $type;
+    }
+  }
+  return $perms;
+}
+
+function cod_session_schedulable_types() {
+  $schedulable_types = array();
+  $types = content_types();
+  // For node types with slot and room fields provide a scheduling permission.
+  foreach ($types as $type => $content_type) {
+    if (isset($content_type['fields']['field_session_room']) && isset($content_type['fields']['field_session_slot'])) {
+      $schedulable_types[$type] = $content_type;
+    }
+  }
+  return $schedulable_types;
+}
+
+/**
  * Implementation of hook_field_access().
  */
 function cod_session_field_access($op, $field, $account, $node = NULL) {
   switch ($op) {
-    case 'view':
     case 'edit':
-      // Add new user access check for certain roles, @todo
-      if ($node->type == 'session' && ($field['field_name'] == 'field_session_room' || $field['field_name'] == 'field_session_slot')) {
+      // Respect custom schedule permission.
+      if (!user_access('schedule '. $node->type, $account) && ($field['field_name'] == 'field_session_room' || $field['field_name'] == 'field_session_slot')) {
         return FALSE;
       }
   }
@@ -32,7 +57,7 @@ function cod_session_theme() {
 /**
  * Implementation of hook_nodeapi().
  */
-function cod_session_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
+/*function cod_session_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
   if ($op == 'validate' && $node->type == 'session') {
     // If the node has a room and slot field, make sure there are no existing nodes that have the same room/slot combination.
     if (!empty($node->field_session_slot[0]['nid']) && !empty($node->field_session_room[0]['nid'])) {
@@ -78,7 +103,7 @@ function cod_session_nodeapi(&$node, $op, $a3 = NULL, $a4 = NULL) {
       }
     }
   }
-}
+}*/
 
 /**
  * Theme function to render the calendar grid.
@@ -311,4 +336,31 @@ function _cod_session_machine_keys($prefix, $keys) {
     $machine_keys[$index] = $machine_key;
   }
   return $machine_keys;
+}
+
+/**
+ * Helper function determines if user can create session content and schedule.
+ */
+function cod_session_schedule_access($node_type = 'session', $account) {
+  // @todo remove when ready to turn bof-scheduler into cod-scheduler
+  // or when ready to make Prepopulate arguments work for sessions as well as
+  // bofs.
+  if ($node_type == 'session') {
+    return FALSE;
+  }
+  // Also check cod_session's field access override.
+  $node_obj = new stdClass();
+  $node_obj->type = $node_type;
+  $field_room = array(
+    'field_name' => 'field_session_room'
+  );
+  
+  $field_slot = array(
+    'field_name' => 'field_session_slot'
+  );
+  return user_access('create ' . $node_type. ' content', $account)
+    && user_access('edit field_session_room', $account)
+    && user_access('edit field_session_slot', $account)
+    && cod_session_field_access('edit', $field_room, $account, $node_obj)
+    && cod_session_field_access('edit', $field_slot, $account, $node_obj);
 }
