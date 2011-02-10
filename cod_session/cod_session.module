@@ -507,6 +507,7 @@ function template_preprocess_cod_session_schedule(&$vars) {
   // Get days of the schedule from the Views style settings.
   $all_schedule_days = $view->cod_schedule_days;
   // If an argument is present limit the schedule days.
+  $schedule_days = $all_schedule_days;
   if (!empty($view->args[0])) {
     if (array_key_exists($view->args[0], $all_schedule_days)) {
       $schedule_days = array($view->args[0] => $all_schedule_days[$view->args[0]]);
@@ -516,7 +517,7 @@ function template_preprocess_cod_session_schedule(&$vars) {
   // Attach links to the top of the display if there is more than one day.
   $day_links = array();
   $current_path = $view->display['page_1']->display_options['path'];
-  if (count($all_schedule_days) > 1) {
+  if (!empty($view->args[0]) && count($all_schedule_days) > 1) {
     foreach ($all_schedule_days as $day_key => $day) {
       // @todo pass along links with attribute information?
       $day_links[] = l($day, $current_path . '/' . $day_key);
