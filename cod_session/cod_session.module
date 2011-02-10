@@ -601,7 +601,7 @@ function template_preprocess_cod_session_schedule(&$vars) {
   // Explicitly discover if there are unschedled sessions by this user if
   // the interactive workflow is enabled.
   if ($view->cod_schedule_interactive) {
-    $authored = cod_session_users_contentbofs($user, $view->cod_interactive_type, FALSE);
+    $authored = cod_session_users_content($user, $view->cod_interactive_type, FALSE);
     if (!empty($authored)) {
       $unscheduled_bofs = TRUE;
     }
