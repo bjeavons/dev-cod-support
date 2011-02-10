@@ -1,7 +1,13 @@
 <?php if(!empty($days) && !empty($rooms) && !empty($arranged_slots)): ?>
+<?php if (!empty($day_links)): ?>
+<ul>
+<?php foreach ($day_links as $link): ?>
+<li><?php print $link; ?></li>
+<?php endforeach ?>
+</ul>
+<?php endif ?>
 <?php foreach ($days as $day_key => $day_title): ?>
   <h2><?php print $day_title; ?></h2>
-
   <table class="session-calendar">
     <tr>
       <th><?php print t('Time'); ?></th>

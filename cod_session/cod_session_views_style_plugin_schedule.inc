@@ -13,8 +13,9 @@ class cod_session_views_style_plugin_schedule extends views_plugin_style {
     // Set COD-specific settings.
     $view->cod_schedule_interactive = $this->options['schedule_interactive'];
     if (!empty($this->options['schedule_days'])) {
+      $all_schedule_days = cod_session_days();
       $schedule_days = array_filter($this->options['schedule_days']);
-      $view->cod_schedule_days = $schedule_days; // @todo get more info about this day?
+      $view->cod_schedule_days = array_intersect_key($all_schedule_days, $schedule_days);
     }
     else {
       $schedule_days = cod_session_days();
