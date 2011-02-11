@@ -664,14 +664,24 @@ function template_preprocess_cod_session_schedule(&$vars) {
   // @todo Give plugin options for date formats and text?
   $arranged_slots = array();
   foreach ($slots as $slot) {
+    // Do not fill slots on non-interactive schedules that are not in use.
+    if (!$view->cod_schedule_interactive && !in_array($slot->nid, $used_slots)) {
+      continue;
+    }
     // Make formatted times.
     $time_format = cod_session_time_slot_format($slot);
     $day_key = date_format_date($time_format['date_start'], 'custom', 'Y-m-d');
-    $arranged_slots[$day_key][date_format_date($time_format['date_start'], 'custom', DATE_FORMAT_UNIX)] = array(
+    $timestamp = date_format_date($time_format['date_start'], 'custom', DATE_FORMAT_UNIX);
+    $arranged_slots[$day_key][$timestamp] = array(
       'nid' => $slot->nid,
       'start' => $time_format['formatted_start'],
       'end' => $time_format['formatted_end'],
+      'class' => '',
     );
+    // If interactive and row is empty include a class.
+    if ($view->cod_schedule_interactive && !in_array($slot->nid, $used_slots)) {
+      $arranged_slots[$day_key][$timestamp]['class'] = 'empty';
+    }
     // Hold onto what slots go with a day_key so the empty rooms for a day can
     // be easily calculated.
     $days_slots[$day_key][] = $slot->nid;
@@ -725,7 +735,6 @@ function template_preprocess_cod_session_schedule(&$vars) {
         }
         // Collect sessions and availability and CTA information.
         // The tpl file determines what to print. @todo make that determination here?
-
         // Store this room's capacity @todo could make it prop of room array.
         $available = $rooms[$room_nid]['capacity'] ? (int) $rooms[$room_nid]['capacity'] : 0;
         // Now at the level of depth of session_grid, that is [slot][room].

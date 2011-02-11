@@ -18,7 +18,7 @@
       <?php endforeach ?>
     </tr>
     <?php foreach ($arranged_slots[$day_key] as $slot): ?>
-    <tr class="<?php print $zebra = $zebra == 'even' ? 'odd':'even'; ?>">
+    <tr class="<?php print $zebra = $zebra == 'even' ? 'odd':'even'; ?> <?php print $slot['class']; ?>">
         <td class="time-label">
           <?php print $slot['start']; ?>&nbsp;-<br /><?php print $slot['end']; ?>
         </td>
